@@ -34,55 +34,52 @@ async function fetchRSS() {
 async function processProgressItems() {
   const items = await fetchRSS();
 
-  const progressItems = items.filter((item) => {
-    // Filter items that match the progress pattern in the title
-    const cleanTitle = item.title.replace(/\s+/g, " ").trim();
-    return cleanTitle.includes("is") && cleanTitle.includes("done with");
-  });
+  const seenTitles = new Set();
+  const books = [];
 
-  // Extract progress, title, and image URL
-  const books = progressItems
-    .map((item) => {
-      try {
-        // Clean up the title and match progress
-        const cleanTitle = item.title.replace(/\s+/g, " ").trim();
-        const titleMatch = cleanTitle.match(/is (\d+)% done with (.+)/);
+  for (const item of items) {
+    try {
+      const cleanTitle = item.title.replace(/\s+/g, " ").trim();
 
-        // Decode the description to handle escaped HTML entities
-        const rawDesc = item.description || item["content:encoded"] || "";
-        const desc = he.decode(rawDesc); // Decode HTML entities
-
-        // Extract the image URL from the decoded description
-        const coverMatch = desc.match(/src="([^"]+)"/);
-
-        // If we can't find both a progress match and a cover image, skip this entry
-        if (!titleMatch || !coverMatch) {
-          console.log("Skipping item (missing match):", {
-            title: cleanTitle,
-            description: desc,
-          });
-          return null;
-        }
-
-        const progress = parseInt(titleMatch[1], 10);
-        const title = titleMatch[2].trim();
-        const rawCover = coverMatch[1];
-        const coverImage = rawCover.replace(/\._S[XY]\d+_/, "._SX180_"); // Update cover size
-
-        return {
-          title,
-          progress,
-          coverImage,
-        };
-      } catch (err) {
-        console.warn(`Skipping item due to error: ${err}`);
-        return null;
+      if (!(cleanTitle.includes("is") && cleanTitle.includes("done with"))) {
+        continue;
       }
-    })
-    .filter(Boolean);
+
+      const titleMatch = cleanTitle.match(/is (\d+)% done with (.+)/);
+      if (!titleMatch) continue;
+
+      const progress = parseInt(titleMatch[1], 10);
+      const title = titleMatch[2].trim();
+
+      // Skip if we've already added this book
+      if (seenTitles.has(title)) continue;
+
+      const rawDesc = item.description || item["content:encoded"] || "";
+      const desc = he.decode(rawDesc);
+
+      const coverMatch = desc.match(/src="([^"]+)"/);
+      if (!coverMatch) continue;
+
+      const rawCover = coverMatch[1];
+      const coverImage = rawCover.replace(/\._S[XY]\d+_/, "._SX180_");
+
+      books.push({
+        title,
+        progress,
+        coverImage,
+      });
+
+      // Mark this book as seen
+      seenTitles.add(title);
+
+    } catch (err) {
+      console.warn(`Skipping item due to error: ${err}`);
+    }
+  }
 
   return books;
 }
+
 
 // Route to get books data
 app.get("/currently-reading", async (req, res) => {
